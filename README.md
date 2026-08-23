@@ -11,9 +11,23 @@ It works by batching writes into shared transactions while retaining per-query e
 
 Usable with any `database/sql` compatible driver.
 
-## README TODOs
+## Why it exists
 
-- Why it exists (fsync-per-commit, batching as the fix)
+SQLite runs the world. And yet some people think it can't run their app. "A single writer means writes are too slow."
+
+It's a lot faster than it gets credit for, but the single writer pattern is a bottleneck for developers who are used to firing up a database connection and throwing in queries.
+
+All Batchqlite does is take a common pattern (The Batch Writer) and package it in a simple, easy to use library.
+
+Queue up writes, write as a batch, queue up some more. One fsync for every batch instead of every query.
+
+Combine that with sensible default settings like WAL mode and it's off to the races.
+
+Early numbers are promising. A naive sqlite loop gets 100 to 1000 writes per second. Batchql gets 180k writes on a $6 commodity vps. 530k writes on a Macbook Pro.
+
+Repeatable, robust benchmarking is coming. 
+
+## README TODOs
 
 - Install instructions
 
