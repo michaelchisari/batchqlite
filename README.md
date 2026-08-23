@@ -40,8 +40,4 @@ Small, opinionated SQLite Batch Writer Library for Go
 
 - Workload management
 
-- License
-
-- Contributing guidelines
-
 - Versioning
