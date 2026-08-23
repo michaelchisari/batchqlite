@@ -20,4 +20,5 @@ var (
 	ErrNotOpen                   = errors.New("batchqlite: batch has not been opened")
 	ErrIllegalKeywordInQuery     = errors.New("batchqlite: query contains illegal keyword")
 	ErrMultipleStatementsInQuery = errors.New("batchqlite: query cannot contain multiple statements")
+	ErrStructuralFailure         = errors.New("batchqlite: structural failure, query not attempted")
 )

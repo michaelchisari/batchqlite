@@ -525,9 +525,9 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 		}
 	}
 
-	tx, err := b.writeConn.BeginTx(context.Background(), nil)
-	if err != nil {
-		return fmt.Errorf("batchqlite: could not begin fast path transaction: %w", err)
+	tx, txErr := b.writeConn.BeginTx(context.Background(), nil)
+	if txErr != nil {
+		return fmt.Errorf("batchqlite: could not begin fast path transaction: %w", txErr)
 	}
 
 	fastResults, fastErr := b.execFastPath(tx, batch)
@@ -546,6 +546,15 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 
 		saveTx, err := b.writeConn.BeginTx(context.Background(), nil)
 		if err != nil {
+			// begin transaction failed so report back
+			for _, req := range batch {
+				if req.typeOf == respondRequest {
+					req.pending.complete(nil, ErrStructuralFailure)
+				}
+				if req.typeOf == loggedRequest {
+					b.Logger().Error("batchqlite: query not attempted due to structural failure", "query", req.query)
+				}
+			}
 			return fmt.Errorf("batchqlite: could not begin savepoint transaction: %w", err)
 		}
 
@@ -605,21 +614,47 @@ func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Resul
 	return results, nil
 }
 
-func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error {
+func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) (err error) {
 	if len(batch) == 0 {
 		return nil
 	}
-	for _, req := range batch {
-		err := req.ctx.Err()
-		if err != nil {
+
+	resolved := make([]bool, len(batch))
+
+	// fallback for any unexpected sqlite errors
+	defer func() {
+		if err == nil {
+			return
+		}
+
+		for i, req := range batch {
+			if resolved[i] {
+				continue
+			}
+
 			if req.typeOf == respondRequest {
-				if dup := req.pending.complete(nil, req.ctx.Err()); dup {
+				req.pending.complete(nil, ErrStructuralFailure)
+			}
+
+			if req.typeOf == loggedRequest {
+				b.Logger().Error("batchqlite: query not attempted due to structural failure", "query", req.query)
+			}
+
+		}
+	}()
+
+	for i, req := range batch {
+		ctxErr := req.ctx.Err()
+		if ctxErr != nil {
+			if req.typeOf == respondRequest {
+				if dup := req.pending.complete(nil, ctxErr); dup {
 					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
 				}
 			}
 			if req.typeOf == loggedRequest {
-				b.Logger().Error("batchqlite: query error", "query", req.query, "err", req.ctx.Err())
+				b.Logger().Error("batchqlite: query error", "query", req.query, "err", ctxErr)
 			}
+			resolved[i] = true
 			continue
 		}
 
@@ -642,6 +677,7 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 			if req.typeOf == loggedRequest {
 				b.Logger().Error("batchqlite: query error", "query", req.query, "err", execErr)
 			}
+			resolved[i] = true
 		} else {
 			_, releaseErr := tx.Exec(releaseStmt)
 			if releaseErr != nil {
@@ -655,6 +691,7 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 			if req.typeOf == loggedRequest {
 				// no log required on success
 			}
+			resolved[i] = true
 		}
 	}
 
