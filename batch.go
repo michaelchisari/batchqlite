@@ -561,8 +561,14 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 	// close out pending requests
 	for i, req := range batch {
 		if req.typeOf == respondRequest {
-			if dup := req.pending.complete(fastResults[i], nil); dup {
-				b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+			if req.ctx.Err() != nil {
+				if dup := req.pending.complete(nil, req.ctx.Err()); dup {
+					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+				}
+			} else {
+				if dup := req.pending.complete(fastResults[i], nil); dup {
+					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+				}
 			}
 		}
 	}
@@ -581,13 +587,8 @@ func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Resul
 	for i, req := range batch {
 		err := req.ctx.Err()
 		if err != nil {
-			if req.typeOf == respondRequest {
-				if dup := req.pending.complete(nil, req.ctx.Err()); dup {
-					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
-				}
-			}
 			if req.typeOf == loggedRequest {
-				b.Logger().Error("batchqlite: query error", "query", req.query, "err", req.ctx.Err())
+				b.Logger().Error("batchqlite: query error", "query", req.query, "err", err)
 			}
 			results[i] = nil
 			continue
@@ -717,6 +718,16 @@ func (b *Batchqlite) applyReadPragmas(db *sql.DB) error {
 		}
 	}
 
+	return nil
+}
+
+// internal: validate
+func validateQuery(query string) error {
+	/*
+	 * TODO
+	 * Validate sql quickly through lexical parsing that ignores anything in '', "", [], `` and comments.
+	 * Error on invalid keywords and multiple statements.
+	 */
 	return nil
 }
 
