@@ -43,7 +43,6 @@ Having trouble with `cgo`? Try this:
 
 ```
       _ "modernc.org/sqlite"
-      _ "github.com/modernc.org/sqlite"
    
 ```
 
