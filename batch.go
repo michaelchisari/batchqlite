@@ -71,9 +71,9 @@ type Batchqlite struct {
 	readPool  *sql.DB
 	queue     chan writeRequest
 	cfg       batchqliteConfig
-	state     atomic.Uint32
+	state     atomic.Uint32 // governs whether queries can be queued
 	stopCh    chan struct{}
-	doneCh    chan struct{}
+	doneCh    chan struct{} // tracks whether background gorotuines have exited
 }
 
 func (b *Batchqlite) WithMaxQueueDepth(v int) error {
@@ -439,6 +439,12 @@ func (b *Batchqlite) Query(ctx context.Context, query string, args ...any) (*sql
 func (b *Batchqlite) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
 	if batchqliteState(b.state.Load()) != stateOpen {
 		// can't return err, let ctx fail
+		// matches database/sql pattern
+
+		// if state is closed or closing,
+		// *sql.Row carries driver-level "database is closed" error
+
+		// if readPool is nil (never opened), this will panic
 	}
 
 	r := b.readPool.QueryRowContext(ctx, query, args...)
