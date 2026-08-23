@@ -381,7 +381,62 @@ func (b *Batchqlite) flushLoop() {
 		}
 	}
 }
-func (b *Batchqlite) flushBatch(batch []writeRequest) error
+
+func (b *Batchqlite) flushBatch(batch []writeRequest) error {
+	if len(batch) == 0 {
+		return nil
+	}
+
+	allQuiet := true
+	for _, req := range batch {
+		if req.typeOf != quietRequest {
+			allQuiet = false
+			break
+		}
+	}
+
+	tx, err := b.writeConn.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fmt.Errorf("batchqlite: could not begin fast path transaction: %w", err)
+	}
+
+	fastErr := b.execFastPath(tx, batch)
+
+	var fastCommitErr error
+	if fastErr == nil {
+		fastCommitErr = tx.Commit()
+	}
+
+	if fastErr != nil || fastCommitErr != nil {
+		tx.Rollback()
+
+		if allQuiet {
+			return nil
+		}
+
+		saveTx, err := b.writeConn.BeginTx(context.Background(), nil)
+		if err != nil {
+			return fmt.Errorf("batchqlite: could not begin savepoint transaction: %w", err)
+		}
+
+		if err = b.execWithSavepoints(saveTx, batch); err != nil {
+			return err
+		}
+		if err = saveTx.Commit(); err != nil {
+			return fmt.Errorf("batchqlite: could not commit savepoint transaction: %w", err)
+		}
+
+		return nil
+	}
+
+	for _, req := range batch {
+		if req.typeOf == respondRequest {
+			req.pending.complete(nil)
+		}
+	}
+
+	return nil
+}
 
 // internal: exec
 func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) error

@@ -8,3 +8,4 @@ type Pending struct {
 }
 
 func (p *Pending) Wait(ctx context.Context) error
+func (p *Pending) complete(err error)
