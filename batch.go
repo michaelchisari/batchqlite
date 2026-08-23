@@ -225,14 +225,19 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 
 	writeConn.SetMaxOpenConns(1)
 	if err = b.applyWritePragmas(writeConn); err != nil {
-		writeConn.Close()
+		if closeErr := writeConn.Close(); closeErr != nil {
+			b.Logger().Error("batchqlite: failed to close write connection during Open cleanup", "err", closeErr)
+		}
+
 		b.state.Store(uint32(stateClosed))
 		return err
 	}
 
 	readPool, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
-		writeConn.Close()
+		if closeErr := writeConn.Close(); closeErr != nil {
+			b.Logger().Error("batchqlite: failed to close write connection during Open cleanup", "err", closeErr)
+		}
 		b.state.Store(uint32(stateClosed))
 		return err
 	}
@@ -493,6 +498,9 @@ func (b *Batchqlite) closeConns() error {
 	rerr := b.readPool.Close()
 	b.state.Store(uint32(stateClosed))
 	if werr != nil {
+		if rerr != nil {
+			b.Logger().Error("batchqlite: failed to close read pool", "err", rerr)
+		}
 		return werr
 	}
 	return rerr
@@ -795,7 +803,9 @@ func (b *Batchqlite) initReadPoolPragmas(db *sql.DB) error {
 
 	defer func() {
 		for _, c := range conns {
-			c.Close()
+			if err := c.Close(); err != nil {
+				b.Logger().Error("batchqlite: failed to release read connection during setup", "err", err)
+			}
 		}
 	}()
 
