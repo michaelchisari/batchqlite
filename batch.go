@@ -30,6 +30,7 @@ const (
 	stateOpening
 	stateOpen
 	stateClosing
+	statePoisoned
 )
 
 type savepointResult struct {
@@ -213,6 +214,10 @@ func NewBatchqlite() *Batchqlite {
 
 // init
 func (b *Batchqlite) Open(driverName, dataSourceName string) error {
+	if batchqliteState(b.state.Load()) == statePoisoned {
+		return ErrPoisoned
+	}
+
 	if !b.state.CompareAndSwap(uint32(stateClosed), uint32(stateOpening)) {
 		return ErrAlreadyOpen
 	}
@@ -295,6 +300,7 @@ func (b *Batchqlite) Close() error {
 			}
 			return ErrCloseTimedOut
 		case <-time.After(b.cfg.closeTimeout):
+			b.state.Store(uint32(statePoisoned))
 			return ErrCloseForceFailed
 		}
 	}
@@ -494,6 +500,22 @@ func (b *Batchqlite) CloseTimeout() time.Duration {
 }
 func (b *Batchqlite) Logger() *slog.Logger {
 	return b.cfg.logger
+}
+func (b *Batchqlite) State() string {
+	switch batchqliteState(b.state.Load()) {
+	case stateOpening:
+		return "opening"
+	case stateOpen:
+		return "open"
+	case stateClosing:
+		return "closing"
+	case stateClosed:
+		return "closed"
+	case statePoisoned:
+		return "poisoned"
+	default:
+		return "unknown"
+	}
 }
 
 // internal: close connections

@@ -23,7 +23,6 @@ var (
 	ErrStructuralFailure         = errors.New("batchqlite: structural failure, query not attempted")
 	ErrAbandoned                 = errors.New("batchqlite: request abandoned, batch closed with AbandonQueueOnClose")
 	ErrClosing                   = errors.New("batchqlite: batch is closing, no longer accepting writes")
-
-	// ErrCloseForceFailed instance should be treated as permanently poisoned and discarded, not reopened
-	ErrCloseForceFailed = errors.New("batchqlite: flush goroutine did not stop even after force-closing connections")
+	ErrCloseForceFailed          = errors.New("batchqlite: flush goroutine did not stop even after force-closing connections")
+	ErrPoisoned                  = errors.New("batchqlite: instance is in a poisoned state and cannot be reopened")
 )
