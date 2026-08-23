@@ -400,7 +400,7 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 		return fmt.Errorf("batchqlite: could not begin fast path transaction: %w", err)
 	}
 
-	fastErr := b.execFastPath(tx, batch)
+	fastResults, fastErr := b.execFastPath(tx, batch)
 
 	var fastCommitErr error
 	if fastErr == nil {
@@ -429,9 +429,9 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 		return nil
 	}
 
-	for _, req := range batch {
+	for i, req := range batch {
 		if req.typeOf == respondRequest {
-			req.pending.complete(nil)
+			req.pending.complete(fastResults[i], nil)
 		}
 	}
 
@@ -439,7 +439,32 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 }
 
 // internal: exec
-func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) error
+func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Result, error) {
+	if len(batch) == 0 {
+		return []sql.Result{}, nil
+	}
+
+	results := make([]sql.Result, len(batch))
+
+	for i, req := range batch {
+		err := req.ctx.Err()
+		if err != nil {
+			if req.typeOf == respondRequest {
+				req.pending.complete(nil, req.ctx.Err())
+			}
+			results[i] = nil
+			continue
+		}
+		r, err := tx.Exec(req.query, req.args...)
+		if err != nil {
+			return []sql.Result{}, err
+		}
+		results[i] = r
+	}
+
+	return results, nil
+}
+
 func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error
 
 // internal: checkpoint
