@@ -215,6 +215,7 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 
 	writeConn.SetMaxOpenConns(1)
 	if err = b.applyWritePragmas(writeConn); err != nil {
+		writeConn.Close()
 		return err
 	}
 
