@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 )
 
@@ -419,7 +420,8 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 			return fmt.Errorf("batchqlite: could not begin savepoint transaction: %w", err)
 		}
 
-		if err = b.execWithSavepoints(saveTx, batch); err != nil {
+		err = b.execWithSavepoints(saveTx, batch)
+		if err != nil {
 			return err
 		}
 		if err = saveTx.Commit(); err != nil {
@@ -429,6 +431,7 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 		return nil
 	}
 
+	// close out pending requests
 	for i, req := range batch {
 		if req.typeOf == respondRequest {
 			req.pending.complete(fastResults[i], nil)
@@ -441,7 +444,7 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 // internal: exec
 func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Result, error) {
 	if len(batch) == 0 {
-		return []sql.Result{}, nil
+		return nil, nil
 	}
 
 	results := make([]sql.Result, len(batch))
@@ -452,12 +455,15 @@ func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Resul
 			if req.typeOf == respondRequest {
 				req.pending.complete(nil, req.ctx.Err())
 			}
+			if req.typeOf == loggedRequest {
+				b.Logger().Error("batchqlite: query error", "query", req.query, "err", req.ctx.Err())
+			}
 			results[i] = nil
 			continue
 		}
 		r, err := tx.Exec(req.query, req.args...)
 		if err != nil {
-			return []sql.Result{}, err
+			return nil, err
 		}
 		results[i] = r
 	}
@@ -465,7 +471,60 @@ func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Resul
 	return results, nil
 }
 
-func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error
+func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error {
+	if len(batch) == 0 {
+		return nil
+	}
+	for i, req := range batch {
+		err := req.ctx.Err()
+		if err != nil {
+			if req.typeOf == respondRequest {
+				req.pending.complete(nil, req.ctx.Err())
+			}
+			if req.typeOf == loggedRequest {
+				b.Logger().Error("batchqlite: query error", "query", req.query, "err", req.ctx.Err())
+			}
+			continue
+		}
+
+		is := strconv.Itoa(i)
+		savepoint := "SAVEPOINT sp" + is
+		rollback := "ROLLBACK TO sp" + is
+		release := "RELEASE sp" + is
+
+		_, err = tx.Exec(savepoint)
+		if err != nil {
+			return err
+		}
+
+		r, execErr := tx.Exec(req.query, req.args...)
+		if execErr != nil {
+			_, rollbackErr := tx.Exec(rollback)
+			if rollbackErr != nil {
+				return rollbackErr
+			}
+			if req.typeOf == respondRequest {
+				req.pending.complete(nil, execErr)
+			}
+			if req.typeOf == loggedRequest {
+				b.Logger().Error("batchqlite: query error", "query", req.query, "err", execErr)
+			}
+		} else {
+			_, releaseErr := tx.Exec(release)
+			if releaseErr != nil {
+				return releaseErr
+			}
+			if req.typeOf == respondRequest {
+				req.pending.complete(r, nil)
+			}
+			if req.typeOf == loggedRequest {
+				// no log required on success
+			}
+		}
+	}
+
+	return nil
+}
 
 // internal: checkpoint
 func (b *Batchqlite) checkpointLoop()
@@ -502,9 +561,6 @@ func (b *Batchqlite) applyReadPragmas(db *sql.DB) error {
 
 	return nil
 }
-
-// internal: drain on close
-func (b *Batchqlite) drain(ctx context.Context) error
 
 /*
 func main() {
