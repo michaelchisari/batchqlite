@@ -334,6 +334,13 @@ func (b *Batchqlite) ExecNow(ctx context.Context, query string, args ...any) err
 	if batchqliteState(b.state.Load()) != stateOpen {
 		return ErrNotOpen
 	}
+
+	select {
+	case <-b.stopCh:
+		return ErrClosing
+	default:
+	}
+
 	if err := validateQuery(query); err != nil {
 		return err
 	}
@@ -346,6 +353,12 @@ func (b *Batchqlite) ExecNow(ctx context.Context, query string, args ...any) err
 func (b *Batchqlite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	if batchqliteState(b.state.Load()) != stateOpen {
 		return nil, ErrNotOpen
+	}
+
+	select {
+	case <-b.stopCh:
+		return nil, ErrClosing
+	default:
 	}
 
 	r, err := b.readPool.QueryContext(ctx, query, args...)
@@ -370,6 +383,9 @@ func (b *Batchqlite) QueryRow(ctx context.Context, query string, args ...any) *s
 }
 
 // introspection
+
+// QueueDepth returns 0 when empty or instance is unavailable
+// for monitoring use in combination with State()
 func (b *Batchqlite) QueueDepth() int {
 	return len(b.queue)
 }
