@@ -541,6 +541,7 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 
 	tx, txErr := b.writeConn.BeginTx(context.Background(), nil)
 	if txErr != nil {
+		b.resolveAllAsStructuralFailure(batch)
 		return fmt.Errorf("batchqlite: could not begin fast path transaction: %w", txErr)
 	}
 
