@@ -477,9 +477,9 @@ func (b *Batchqlite) Logger() *slog.Logger {
 
 // internal: close connections
 func (b *Batchqlite) closeConns() error {
-	b.state.Store(uint32(stateClosed))
 	werr := b.writeConn.Close()
 	rerr := b.readPool.Close()
+	b.state.Store(uint32(stateClosed))
 	if werr != nil {
 		return werr
 	}
