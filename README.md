@@ -39,12 +39,27 @@ Pick a sqlite database driver. Not sure which one? Do this:
     )
 ```
 
+And then:
+
+```
+    b := batchqlite.NewBatchqlite()
+    b.Open("sqlite3", "/tmp/data.db");
+```
+
 Having trouble with `cgo`? Try this:
 
 ```
       _ "modernc.org/sqlite"
    
 ```
+
+And then:
+
+```
+    b := batchqlite.NewBatchqlite()
+    b.Open("sqlite", "/tmp/data.db");
+```
+
 
 ## README TODOs
 
