@@ -220,7 +220,10 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 	}
 
 	readPool.SetMaxOpenConns(b.cfg.maxReadPoolSize)
-	if err := b.applyReadPragmas(readPool); err != nil {
+
+	// pragma every connection
+	// safe since connection cannot be changed while open
+	if err := b.initReadPoolPragmas(readPool); err != nil {
 		writeConn.Close()
 		readPool.Close()
 		return err
@@ -683,6 +686,7 @@ func (b *Batchqlite) checkpoint() error {
 }
 
 // internal: pragmas
+
 func (b *Batchqlite) applyWritePragmas(db *sql.DB) error {
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",
@@ -699,16 +703,38 @@ func (b *Batchqlite) applyWritePragmas(db *sql.DB) error {
 	return nil
 }
 
-func (b *Batchqlite) applyReadPragmas(db *sql.DB) error {
+func (b *Batchqlite) initReadPoolPragmas(db *sql.DB) error {
+	conns := make([]*sql.Conn, 0, b.cfg.maxReadPoolSize)
+
+	defer func() {
+		for _, c := range conns {
+			c.Close()
+		}
+	}()
+
+	walMode := "PRAGMA journal_mode=WAL"
+	if _, err := db.Exec(walMode); err != nil {
+		return fmt.Errorf("batchqlite: could not apply pragma %q: %w", walMode, err)
+	}
+
+	ctx := context.Background()
+
 	pragmas := []string{
-		"PRAGMA journal_mode=WAL",
 		fmt.Sprintf("PRAGMA busy_timeout=%d", b.cfg.sqliteBusyTimeout.Milliseconds()),
 		"PRAGMA query_only=ON",
 	}
 
-	for _, p := range pragmas {
-		if _, err := db.Exec(p); err != nil {
-			return fmt.Errorf("batchqlite: could not apply pragma %q: %w", p, err)
+	for i := 0; i < b.cfg.maxReadPoolSize; i++ {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return fmt.Errorf("batchqlite: could not reserve read connection %d: %w", i, err)
+		}
+		conns = append(conns, conn)
+
+		for _, p := range pragmas {
+			if _, err := conn.ExecContext(ctx, p); err != nil {
+				return fmt.Errorf("batchqlite: could not apply pragma %q: %w", p, err)
+			}
 		}
 	}
 
