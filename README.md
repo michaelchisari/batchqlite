@@ -122,7 +122,7 @@ Each method deals with success or failure differently.
 
 `Exec` adds a query to the batch writer. Failure is logged. Queries are executed in the order they are received. First-in-first-out (FIFO).
 
-`ExecAndWait` adds a query to the batch writer and sends the response (an `sql.Result` and an error) to a response channel. Wait for the response using `Pending.Wait`. In order / FIFO.
+`ExecAndWait` adds a query to the batch writer and sends the response `Pending.Wait` when it's ready. In order / FIFO.
 
 `ExecQuiet` adds a query to the batch writer. FIFO. No response, no logging. Any failure is silent.
 
