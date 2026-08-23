@@ -318,7 +318,7 @@ func (b *Batchqlite) Logger() *slog.Logger {
 	return b.cfg.logger
 }
 
-// internal: close
+// internal: close connections
 func (b *Batchqlite) closeConns() error {
 	b.open = false
 	werr := b.writeConn.Close()
@@ -527,8 +527,28 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 }
 
 // internal: checkpoint
-func (b *Batchqlite) checkpointLoop()
-func (b *Batchqlite) checkpoint() error
+func (b *Batchqlite) checkpointLoop() {
+	ticker := time.NewTicker(b.cfg.sqliteCheckpointInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			err := b.checkpoint()
+			if err != nil {
+				b.Logger().Error("batchqlite: checkpoint failed", "err", err)
+			}
+		case <-b.stopCh:
+			return
+		}
+	}
+}
+
+func (b *Batchqlite) checkpoint() error {
+	if _, err := b.writeConn.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return err
+	}
+	return nil
+}
 
 // internal: pragmas
 func (b *Batchqlite) applyWritePragmas(db *sql.DB) error {
