@@ -27,9 +27,27 @@ Early numbers are promising. A naive sqlite loop gets 100 to 1000 writes per sec
 
 Repeatable, robust benchmarking is coming. 
 
-## README TODOs
+## Install instructions
 
-- Install instructions
+`go get github.com/michaelchisari/batchqlite`
+
+Pick a sqlite database driver. Not sure which one? Do this:
+
+```
+    import (
+      _ "github.com/mattn/go-sqlite3"
+    )
+```
+
+Having trouble with `cgo`? Try this:
+
+```
+      _ "modernc.org/sqlite"
+      _ "github.com/modernc.org/sqlite"
+   
+```
+
+## README TODOs
 
 - Quick start example
 
