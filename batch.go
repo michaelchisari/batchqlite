@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -15,6 +14,12 @@ type onFullPolicy int
 const (
 	Block onFullPolicy = iota
 	Reject
+)
+
+const (
+	savepointStmt = "SAVEPOINT __batchqlite_sp"
+	rollbackStmt  = "ROLLBACK TO __batchqlite_sp"
+	releaseStmt   = "RELEASE __batchqlite_sp"
 )
 
 type writeRequestType int
@@ -601,7 +606,7 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 	if len(batch) == 0 {
 		return nil
 	}
-	for i, req := range batch {
+	for _, req := range batch {
 		err := req.ctx.Err()
 		if err != nil {
 			if req.typeOf == respondRequest {
@@ -615,19 +620,14 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 			continue
 		}
 
-		is := strconv.Itoa(i)
-		savepoint := "SAVEPOINT __batchqlite_sp" + is
-		rollback := "ROLLBACK TO __batchqlite_sp" + is
-		release := "RELEASE __batchqlite_sp" + is
-
-		_, err = tx.Exec(savepoint)
+		_, err = tx.Exec(savepointStmt)
 		if err != nil {
 			return err
 		}
 
 		r, execErr := tx.Exec(req.query, req.args...)
 		if execErr != nil {
-			_, rollbackErr := tx.Exec(rollback)
+			_, rollbackErr := tx.Exec(rollbackStmt)
 			if rollbackErr != nil {
 				return rollbackErr
 			}
@@ -640,7 +640,7 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 				b.Logger().Error("batchqlite: query error", "query", req.query, "err", execErr)
 			}
 		} else {
-			_, releaseErr := tx.Exec(release)
+			_, releaseErr := tx.Exec(releaseStmt)
 			if releaseErr != nil {
 				return releaseErr
 			}
