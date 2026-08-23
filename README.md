@@ -60,10 +60,59 @@ And then:
     b.Open("sqlite", "/tmp/data.db")
 ```
 
+## Quick start example
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+
+    "github.com/michaelchisari/batchqlite"
+    _ "github.com/mattn/go-sqlite3"
+)
+
+func main() {
+    b := batchqlite.NewBatchqlite()
+
+    if err := b.Open("sqlite3", "/tmp/data.db"); err != nil {
+        log.Fatal(err)
+    }
+    defer b.Close()
+
+    ctx := context.Background()
+
+    if err := b.ExecNow(ctx, `CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY,
+        message TEXT NOT NULL
+    )`); err != nil {
+        log.Fatal(err)
+    }
+
+    // Fire-and-forget, logged on failure.
+    if err := b.Exec(ctx, "INSERT INTO events (message) VALUES (?)", "hello"); err != nil {
+        log.Fatal(err)
+    }
+
+    // Wait for confirmation and get the result back.
+    pending, err := b.ExecAndWait(ctx, "INSERT INTO events (message) VALUES (?)", "world")
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    result, err := pending.Wait(ctx)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    id, _ := result.LastInsertId()
+    log.Printf("inserted row %d", id)
+}
+```
+
 
 ## README TODOs
-
-- Quick start example
 
 - Write methods
 
