@@ -5,7 +5,7 @@ Small, opinionated SQLite Batch Writer Library for Go
 
 Batchqlite is a single-writer batching layer over `database/sql` that provides safe, high-performance writes.
 
-It is not a database driver or an ORM. It is highly opinionated with a small, focused api. Four write methods and two read methods. That's it.
+Not a database driver. Not an ORM. It is highly opinionated with a small, focused api. Four write methods and two read methods. That's it.
 
 It works by batching writes into shared transactions while retaining per-query errors and responses.
 
@@ -23,7 +23,7 @@ Queue up writes, write as a batch, queue up some more. One fsync for every batch
 
 Combine that with sensible default settings like WAL mode and it's off to the races.
 
-Early numbers are promising. A naive sqlite loop gets 100 to 1000 writes per second. Batchql gets 180k writes on a $6 commodity vps. 530k writes on a Macbook Pro.
+Early numbers are promising. A naive sqlite loop gets 100 to 1000 writes per second. Batchqlite gets 180k writes on a $6 commodity vps. 530k writes on a Macbook Pro.
 
 Repeatable, robust benchmarking is coming. 
 
