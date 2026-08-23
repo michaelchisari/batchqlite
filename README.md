@@ -104,6 +104,7 @@ func main() {
     result, err := pending.Wait(ctx)
     if err != nil {
         log.Fatal(err)
+
     }
 
     id, _ := result.LastInsertId()
@@ -111,10 +112,25 @@ func main() {
 }
 ```
 
+## Write methods
+
+Four write methods.
+
+Important note on the `error` returned by these methods. These errors tell whether or not the query was *successfully put in the queue*, not whether the query was successful or not.
+
+Each method deals with success or failure differently.
+
+`Exec` adds a query to the batch writer. Failure is logged. Queries are executed in the order they are received. First-in-first-out (FIFO).
+
+`ExecAndWait` adds a query to the batch writer and sends the response (an `sql.Result` and an error) to a response channel. Wait for the response using `Pending.Wait`. In order / FIFO.
+
+`ExecQuiet` adds a query to the batch writer. FIFO. No response, no logging. Any failure is silent.
+
+`ExecNow` *skips the queue* and writes right away. That means it doesn't follow the FIFO pipeline. Use only when necessary. Setting up tables on startup or rare one-off writes. Not sure whether to use it? Don't.
+
+Not all queries are allowed. There's always a catch. The batch writer rejects queries with certain incompatible keywords with error `ErrIllegalKeywordInQuery`.
 
 ## README TODOs
-
-- Write methods
 
 - FIFO ordering guarantee
 
