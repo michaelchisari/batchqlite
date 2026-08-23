@@ -274,14 +274,141 @@ func (b *Batchqlite) Close() error {
 }
 
 // write
-func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error
-func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) error
-func (b *Batchqlite) ExecAndWait(ctx context.Context, query string, args ...any) (*Pending, error)
-func (b *Batchqlite) ExecNow(ctx context.Context, query string, args ...any) error
+func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error {
+	if !b.open {
+		return ErrNotOpen
+	}
+
+	req := writeRequest{
+		ctx:     ctx,
+		typeOf:  loggedRequest,
+		query:   query,
+		args:    args,
+		pending: nil,
+	}
+
+	switch b.cfg.onFullPolicy {
+	case Reject:
+		select {
+		case b.queue <- req:
+			return nil
+		default:
+			return ErrQueueFull
+		}
+	case Block:
+		select {
+		case b.queue <- req:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
+func (b *Batchqlite) ExecAndWait(ctx context.Context, query string, args ...any) (*Pending, error) {
+	if !b.open {
+		return nil, ErrNotOpen
+	}
+
+	p := &Pending{
+		result: nil,
+		done:   make(chan struct{}),
+		err:    nil,
+	}
+
+	req := writeRequest{
+		ctx:     ctx,
+		typeOf:  respondRequest,
+		query:   query,
+		args:    args,
+		pending: p,
+	}
+
+	switch b.cfg.onFullPolicy {
+	case Reject:
+		select {
+		case b.queue <- req:
+			return p, nil
+		default:
+			return nil, ErrQueueFull
+		}
+	case Block:
+		select {
+		case b.queue <- req:
+			return p, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	return nil, nil
+
+}
+
+func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) error {
+	if !b.open {
+		return ErrNotOpen
+	}
+
+	req := writeRequest{
+		ctx:     ctx,
+		typeOf:  quietRequest,
+		query:   query,
+		args:    args,
+		pending: nil,
+	}
+
+	switch b.cfg.onFullPolicy {
+	case Reject:
+		select {
+		case b.queue <- req:
+			return nil
+		default:
+			return ErrQueueFull
+		}
+	case Block:
+		select {
+		case b.queue <- req:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
+func (b *Batchqlite) ExecNow(ctx context.Context, query string, args ...any) error {
+	if !b.open {
+		return ErrNotOpen
+	}
+
+	_, err := b.writeConn.ExecContext(ctx, query, args...)
+	return err
+}
 
 // read
-func (b *Batchqlite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-func (b *Batchqlite) QueryRow(ctx context.Context, query string, args ...any) *sql.Row
+func (b *Batchqlite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if !b.open {
+		return nil, ErrNotOpen
+	}
+
+	r, err := b.readPool.QueryContext(ctx, query, args...)
+
+	return r, err
+}
+
+func (b *Batchqlite) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
+	if !b.open {
+		// can't return err, let ctx fail
+	}
+
+	r := b.readPool.QueryRowContext(ctx, query, args...)
+
+	return r
+}
 
 // introspection
 func (b *Batchqlite) QueueDepth() int {
@@ -576,6 +703,7 @@ func (b *Batchqlite) applyWritePragmas(db *sql.DB) error {
 
 	return nil
 }
+
 func (b *Batchqlite) applyReadPragmas(db *sql.DB) error {
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",
