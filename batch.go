@@ -434,7 +434,9 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 	// close out pending requests
 	for i, req := range batch {
 		if req.typeOf == respondRequest {
-			req.pending.complete(fastResults[i], nil)
+			if dup := req.pending.complete(fastResults[i], nil); dup {
+				b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+			}
 		}
 	}
 
@@ -453,7 +455,9 @@ func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Resul
 		err := req.ctx.Err()
 		if err != nil {
 			if req.typeOf == respondRequest {
-				req.pending.complete(nil, req.ctx.Err())
+				if dup := req.pending.complete(nil, req.ctx.Err()); dup {
+					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+				}
 			}
 			if req.typeOf == loggedRequest {
 				b.Logger().Error("batchqlite: query error", "query", req.query, "err", req.ctx.Err())
@@ -479,7 +483,9 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 		err := req.ctx.Err()
 		if err != nil {
 			if req.typeOf == respondRequest {
-				req.pending.complete(nil, req.ctx.Err())
+				if dup := req.pending.complete(nil, req.ctx.Err()); dup {
+					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+				}
 			}
 			if req.typeOf == loggedRequest {
 				b.Logger().Error("batchqlite: query error", "query", req.query, "err", req.ctx.Err())
@@ -504,7 +510,9 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 				return rollbackErr
 			}
 			if req.typeOf == respondRequest {
-				req.pending.complete(nil, execErr)
+				if dup := req.pending.complete(nil, execErr); dup {
+					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+				}
 			}
 			if req.typeOf == loggedRequest {
 				b.Logger().Error("batchqlite: query error", "query", req.query, "err", execErr)
@@ -515,7 +523,9 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 				return releaseErr
 			}
 			if req.typeOf == respondRequest {
-				req.pending.complete(r, nil)
+				if dup := req.pending.complete(r, nil); dup {
+					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+				}
 			}
 			if req.typeOf == loggedRequest {
 				// no log required on success
