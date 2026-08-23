@@ -277,6 +277,10 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 }
 
 func (b *Batchqlite) Close() error {
+	if batchqliteState(b.state.Load()) == statePoisoned {
+		return ErrPoisoned
+	}
+
 	if !b.state.CompareAndSwap(uint32(stateOpen), uint32(stateClosing)) {
 		return ErrNotOpen
 	}
