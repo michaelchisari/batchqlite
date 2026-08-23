@@ -263,8 +263,15 @@ func (b *Batchqlite) Close() error {
 	case <-b.doneCh:
 		return b.closeConns()
 	case <-time.After(b.cfg.closeTimeout):
-		b.closeConns()
+		closeErr := b.closeConns()
+		<-b.doneCh
+		if closeErr != nil {
+			return closeErr
+		}
 		return ErrCloseTimedOut
+	case <-time.After(b.cfg.closeTimeout):
+		return ErrCloseForceFailed
+
 	}
 }
 
@@ -491,6 +498,7 @@ func (b *Batchqlite) flushLoop() {
 			}
 		case <-b.stopCh:
 			if b.cfg.abandonQueueOnClose {
+				b.abandonQueueAndBatch(batch)
 				return
 			}
 
@@ -602,6 +610,32 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 	}
 
 	return nil
+}
+
+func (b *Batchqlite) abandonQueueAndBatch(batch []writeRequest) {
+	for _, req := range batch {
+		b.resolveAbandoned(req)
+	}
+
+	for {
+		select {
+		case req := <-b.queue:
+			b.resolveAbandoned(req)
+		default:
+			return
+		}
+	}
+}
+
+func (b *Batchqlite) resolveAbandoned(req writeRequest) {
+	if req.typeOf == respondRequest {
+		if dup := req.pending.complete(nil, ErrAbandoned); dup {
+			b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+		}
+	}
+	if req.typeOf == loggedRequest {
+		b.Logger().Error("batchqlite: request abandoned, batch closed with AbandonQueueOnClose", "query", req.query)
+	}
 }
 
 func (b *Batchqlite) resolveAllAsStructuralFailure(batch []writeRequest) {

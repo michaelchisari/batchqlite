@@ -21,4 +21,6 @@ var (
 	ErrIllegalKeywordInQuery     = errors.New("batchqlite: query contains illegal keyword")
 	ErrMultipleStatementsInQuery = errors.New("batchqlite: query cannot contain multiple statements")
 	ErrStructuralFailure         = errors.New("batchqlite: structural failure, query not attempted")
+	ErrAbandoned                 = errors.New("batchqlite: request abandoned, batch closed with AbandonQueueOnClose")
+	ErrCloseForceFailed          = errors.New("batchqlite: flush goroutine did not stop even after force-closing connections")
 )
