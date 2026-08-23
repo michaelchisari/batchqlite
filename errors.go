@@ -18,5 +18,6 @@ var (
 	ErrClosed                    = errors.New("batchqlite: batch is closed")
 	ErrCloseTimedOut             = errors.New("batchqlite: close timed out before queue drained")
 	ErrNotOpen                   = errors.New("batchqlite: batch has not been opened")
+	ErrIllegalKeywordInQuery     = errors.New("batchqlite: query contains illegal keyword")
 	ErrMultipleStatementsInQuery = errors.New("batchqlite: query cannot contain multiple statements")
 )

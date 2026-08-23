@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -259,6 +260,9 @@ func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error 
 	if !b.open {
 		return ErrNotOpen
 	}
+	if err := validateQuery(query); err != nil {
+		return err
+	}
 
 	req := writeRequest{
 		ctx:     ctx,
@@ -291,6 +295,9 @@ func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error 
 func (b *Batchqlite) ExecAndWait(ctx context.Context, query string, args ...any) (*Pending, error) {
 	if !b.open {
 		return nil, ErrNotOpen
+	}
+	if err := validateQuery(query); err != nil {
+		return nil, err
 	}
 
 	p := &Pending{
@@ -332,6 +339,9 @@ func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) e
 	if !b.open {
 		return ErrNotOpen
 	}
+	if err := validateQuery(query); err != nil {
+		return err
+	}
 
 	req := writeRequest{
 		ctx:     ctx,
@@ -364,6 +374,9 @@ func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) e
 func (b *Batchqlite) ExecNow(ctx context.Context, query string, args ...any) error {
 	if !b.open {
 		return ErrNotOpen
+	}
+	if err := validateQuery(query); err != nil {
+		return err
 	}
 
 	_, err := b.writeConn.ExecContext(ctx, query, args...)
@@ -707,11 +720,24 @@ func (b *Batchqlite) applyReadPragmas(db *sql.DB) error {
 // validateQuery returns an error if a query contains any illegal SQL reserved
 // words or if a query contains multiple statements.
 func validateQuery(query string) error {
-	/*
-	 * TODO
-	 * Validate sql quickly through lexical parsing that ignores anything in '', "", [], `` and comments.
-	 * Error on invalid keywords and multiple statements.
-	 */
+
+	words, multiple := lexicalParser(query)
+
+	if multiple {
+		return ErrMultipleStatementsInQuery
+	}
+
+	var found []string
+	for _, k := range illegalKeywords {
+		if _, exists := words[k]; exists {
+			found = append(found, k)
+		}
+	}
+
+	if len(found) > 0 {
+		return fmt.Errorf("%w: %s", ErrIllegalKeywordInQuery, strings.Join(found, ", "))
+	}
+
 	return nil
 }
 
