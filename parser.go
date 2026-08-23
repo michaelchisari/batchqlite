@@ -18,9 +18,9 @@ var illegalKeywords = []string{
 
 // lexicalParser returns the SQL reserved words found in query and reports
 // whether query contains multiple statements.
-func lexicalParser(q string) (words map[string]struct{}, multiple bool) {
+func lexicalParser(q string) (map[string]struct{}, bool) {
 
-	words = make(map[string]struct{})
+	words := make(map[string]struct{})
 
 	for i := 0; i < len(q); {
 		// whitespace
@@ -62,7 +62,7 @@ func lexicalParser(q string) (words map[string]struct{}, multiple bool) {
 			}
 
 			if i < len(q) {
-				multiple = true
+				return nil, true
 			}
 
 			continue
@@ -97,7 +97,7 @@ func lexicalParser(q string) (words map[string]struct{}, multiple bool) {
 		i++
 	}
 
-	return words, multiple
+	return words, false
 }
 
 func skipLineComment(s string, i int) int {
