@@ -622,9 +622,9 @@ func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) error 
 		}
 
 		is := strconv.Itoa(i)
-		savepoint := "SAVEPOINT sp" + is
-		rollback := "ROLLBACK TO sp" + is
-		release := "RELEASE sp" + is
+		savepoint := "SAVEPOINT __batchqlite_sp" + is
+		rollback := "ROLLBACK TO __batchqlite_sp" + is
+		release := "RELEASE __batchqlite_sp" + is
 
 		_, err = tx.Exec(savepoint)
 		if err != nil {
