@@ -247,8 +247,12 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 	// pragma every connection
 	// safe since connection cannot be changed while open
 	if err := b.initReadPoolPragmas(readPool); err != nil {
-		writeConn.Close()
-		readPool.Close()
+		if closeErr := writeConn.Close(); closeErr != nil {
+			b.Logger().Error("batchqlite: failed to close write connection during Open cleanup", "err", closeErr)
+		}
+		if closeErr := readPool.Close(); closeErr != nil {
+			b.Logger().Error("batchqlite: failed to close read pool during Open cleanup", "err", closeErr)
+		}
 		b.state.Store(uint32(stateClosed))
 		return err
 	}
