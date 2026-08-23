@@ -14,9 +14,12 @@ func TestBatchqliteSimpleExecAndQuery(t *testing.T) {
 
 	dbPath := filepath.Join(dir, "test.db")
 
-	b := batchqlite.NewBatchqlite()
+	b, err := batchqlite.NewBatchqlite()
+	if err != nil {
+		t.Fatalf("couldn't create batchqlite: %v", err)
+	}
 
-	err := b.Open("sqlite3", dbPath)
+	err = b.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}

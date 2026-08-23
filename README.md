@@ -42,7 +42,7 @@ Pick a sqlite database driver. Not sure which one? Do this:
 And then:
 
 ```
-    b := batchqlite.NewBatchqlite()
+    b, err := batchqlite.NewBatchqlite()
     b.Open("sqlite3", "/tmp/data.db")
 ```
 
@@ -56,7 +56,7 @@ Having trouble with `cgo`? Try this:
 And then:
 
 ```
-    b := batchqlite.NewBatchqlite()
+    b, err := batchqlite.NewBatchqlite()
     b.Open("sqlite", "/tmp/data.db")
 ```
 
@@ -74,9 +74,12 @@ import (
 )
 
 func main() {
-    b := batchqlite.NewBatchqlite()
+    b, err := batchqlite.NewBatchqlite()
+    if err != nil {
+        log.Fatal(err)
+    }
 
-    if err := b.Open("sqlite3", "/tmp/data.db"); err != nil {
+    if err = b.Open("sqlite3", "/tmp/data.db"); err != nil {
         log.Fatal(err)
     }
     defer b.Close()
