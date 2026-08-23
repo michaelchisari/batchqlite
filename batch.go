@@ -77,122 +77,8 @@ type Batchqlite struct {
 	doneCh    chan struct{} // tracks whether background gorotuines have exited
 }
 
-func (b *Batchqlite) WithMaxQueueDepth(v int) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v <= 0 {
-		return ErrInvalidQueueDepth
-	}
-	b.cfg.maxQueueDepth = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithMaxBatchSizeToProcess(v int) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v <= 0 {
-		return ErrInvalidBatchSize
-	}
-	b.cfg.maxBatchSizeToProcess = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithMaxBatchTimeToProcess(v time.Duration) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v <= 0 {
-		return ErrInvalidBatchTime
-	}
-	b.cfg.maxBatchTimeToProcess = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithMaxReadPoolSize(v int) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v <= 0 {
-		return ErrInvalidReadPoolSize
-	}
-	b.cfg.maxReadPoolSize = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithOnFullPolicy(v onFullPolicy) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v != Block && v != Reject {
-		return ErrInvalidOnFullPolicy
-	}
-	b.cfg.onFullPolicy = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithSqliteBusyTimeout(v time.Duration) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v <= 0 {
-		return ErrInvalidBusyTimeout
-	}
-	b.cfg.sqliteBusyTimeout = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithSqliteCheckpointInterval(v time.Duration) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v <= 0 {
-		return ErrInvalidCheckpointInterval
-	}
-	b.cfg.sqliteCheckpointInterval = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithAbandonQueueOnClose(v bool) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	b.cfg.abandonQueueOnClose = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithCloseTimeout(v time.Duration) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	if v <= 0 {
-		return ErrInvalidCloseTimeout
-	}
-	b.cfg.closeTimeout = v
-
-	return nil
-}
-
-func (b *Batchqlite) WithLogger(l *slog.Logger) error {
-	if batchqliteState(b.state.Load()) != stateClosed {
-		return ErrConfigAfterOpen
-	}
-	b.cfg.logger = l
-
-	return nil
-}
-
-func NewBatchqlite() *Batchqlite {
-	defaultConfig := batchqliteConfig{
+func NewBatchqlite(opts ...Option) (*Batchqlite, error) {
+	cfg := batchqliteConfig{
 		maxQueueDepth:            1000,
 		maxBatchSizeToProcess:    50,
 		maxBatchTimeToProcess:    500 * time.Millisecond,
@@ -205,11 +91,15 @@ func NewBatchqlite() *Batchqlite {
 		logger:                   slog.Default(),
 	}
 
-	b := &Batchqlite{
-		cfg: defaultConfig,
+	for _, opt := range opts {
+		if err := opt(&cfg); err != nil {
+			return nil, err
+		}
 	}
 
-	return b
+	b := &Batchqlite{cfg: cfg}
+
+	return b, nil
 }
 
 // init
@@ -289,11 +179,13 @@ func (b *Batchqlite) Close() error {
 
 	if b.cfg.abandonQueueOnClose {
 		<-b.doneCh
+		b.state.Store(uint32(stateClosed))
 		return b.closeConns()
 	}
 
 	select {
 	case <-b.doneCh:
+		b.state.Store(uint32(stateClosed))
 		return b.closeConns()
 	case <-time.After(b.cfg.closeTimeout):
 		closeErr := b.closeConns()
@@ -526,7 +418,6 @@ func (b *Batchqlite) State() string {
 func (b *Batchqlite) closeConns() error {
 	werr := b.writeConn.Close()
 	rerr := b.readPool.Close()
-	b.state.Store(uint32(stateClosed))
 	if werr != nil {
 		if rerr != nil {
 			b.Logger().Error("batchqlite: failed to close read pool", "err", rerr)

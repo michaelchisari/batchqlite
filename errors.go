@@ -12,7 +12,6 @@ var (
 	ErrInvalidBusyTimeout        = errors.New("batchqlite: sqliteBusyTimeout must be positive")
 	ErrInvalidCheckpointInterval = errors.New("batchqlite: sqliteCheckpointInterval must be positive")
 	ErrInvalidCloseTimeout       = errors.New("batchqlite: closeTimeout must be positive")
-	ErrConfigAfterOpen           = errors.New("batchqlite: cannot configure after open")
 	ErrQueueFull                 = errors.New("batchqlite: queue is full")
 	ErrTimeout                   = errors.New("batchqlite: wait timed out")
 	ErrClosed                    = errors.New("batchqlite: batch is closed")
