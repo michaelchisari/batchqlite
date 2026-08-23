@@ -265,14 +265,15 @@ func (b *Batchqlite) Close() error {
 		return b.closeConns()
 	case <-time.After(b.cfg.closeTimeout):
 		closeErr := b.closeConns()
-		<-b.doneCh
-		if closeErr != nil {
-			return closeErr
+		select {
+		case <-b.doneCh:
+			if closeErr != nil {
+				return closeErr
+			}
+			return ErrCloseTimedOut
+		case <-time.After(b.cfg.closeTimeout):
+			return ErrCloseForceFailed
 		}
-		return ErrCloseTimedOut
-	case <-time.After(b.cfg.closeTimeout):
-		return ErrCloseForceFailed
-
 	}
 }
 
