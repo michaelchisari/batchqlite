@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -61,13 +62,13 @@ type Batchqlite struct {
 	readPool  *sql.DB
 	queue     chan writeRequest
 	cfg       batchqliteConfig
-	open      bool
+	open      atomic.Bool
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 }
 
 func (b *Batchqlite) WithMaxQueueDepth(v int) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v <= 0 {
@@ -79,7 +80,7 @@ func (b *Batchqlite) WithMaxQueueDepth(v int) error {
 }
 
 func (b *Batchqlite) WithMaxBatchSizeToProcess(v int) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v <= 0 {
@@ -91,7 +92,7 @@ func (b *Batchqlite) WithMaxBatchSizeToProcess(v int) error {
 }
 
 func (b *Batchqlite) WithMaxBatchTimeToProcess(v time.Duration) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v <= 0 {
@@ -103,7 +104,7 @@ func (b *Batchqlite) WithMaxBatchTimeToProcess(v time.Duration) error {
 }
 
 func (b *Batchqlite) WithMaxReadPoolSize(v int) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v <= 0 {
@@ -115,7 +116,7 @@ func (b *Batchqlite) WithMaxReadPoolSize(v int) error {
 }
 
 func (b *Batchqlite) WithOnFullPolicy(v onFullPolicy) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v != Block && v != Reject {
@@ -127,7 +128,7 @@ func (b *Batchqlite) WithOnFullPolicy(v onFullPolicy) error {
 }
 
 func (b *Batchqlite) WithSqliteBusyTimeout(v time.Duration) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v <= 0 {
@@ -139,7 +140,7 @@ func (b *Batchqlite) WithSqliteBusyTimeout(v time.Duration) error {
 }
 
 func (b *Batchqlite) WithSqliteCheckpointInterval(v time.Duration) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v <= 0 {
@@ -151,7 +152,7 @@ func (b *Batchqlite) WithSqliteCheckpointInterval(v time.Duration) error {
 }
 
 func (b *Batchqlite) WithAbandonQueueOnClose(v bool) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	b.cfg.abandonQueueOnClose = v
@@ -160,7 +161,7 @@ func (b *Batchqlite) WithAbandonQueueOnClose(v bool) error {
 }
 
 func (b *Batchqlite) WithCloseTimeout(v time.Duration) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	if v <= 0 {
@@ -172,7 +173,7 @@ func (b *Batchqlite) WithCloseTimeout(v time.Duration) error {
 }
 
 func (b *Batchqlite) WithLogger(l *slog.Logger) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrConfigAfterOpen
 	}
 	b.cfg.logger = l
@@ -195,8 +196,7 @@ func NewBatchqlite() *Batchqlite {
 	}
 
 	b := &Batchqlite{
-		cfg:  defaultConfig,
-		open: false,
+		cfg: defaultConfig,
 	}
 
 	return b
@@ -204,7 +204,7 @@ func NewBatchqlite() *Batchqlite {
 
 // init
 func (b *Batchqlite) Open(driverName, dataSourceName string) error {
-	if b.open {
+	if b.open.Load() {
 		return ErrAlreadyOpen
 	}
 
@@ -240,7 +240,7 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 	b.queue = make(chan writeRequest, b.cfg.maxQueueDepth)
 	b.stopCh = make(chan struct{})
 	b.doneCh = make(chan struct{})
-	b.open = true
+	b.open.Store(true)
 
 	go b.flushLoop()
 	go b.checkpointLoop()
@@ -249,7 +249,7 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 }
 
 func (b *Batchqlite) Close() error {
-	if !b.open {
+	if !b.open.Load() {
 		return ErrNotOpen
 	}
 
@@ -279,7 +279,7 @@ func (b *Batchqlite) Close() error {
 
 // write
 func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error {
-	if !b.open {
+	if !b.open.Load() {
 		return ErrNotOpen
 	}
 	if err := validateQuery(query); err != nil {
@@ -315,7 +315,7 @@ func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error 
 }
 
 func (b *Batchqlite) ExecAndWait(ctx context.Context, query string, args ...any) (*Pending, error) {
-	if !b.open {
+	if !b.open.Load() {
 		return nil, ErrNotOpen
 	}
 	if err := validateQuery(query); err != nil {
@@ -358,7 +358,7 @@ func (b *Batchqlite) ExecAndWait(ctx context.Context, query string, args ...any)
 }
 
 func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) error {
-	if !b.open {
+	if !b.open.Load() {
 		return ErrNotOpen
 	}
 	if err := validateQuery(query); err != nil {
@@ -394,7 +394,7 @@ func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) e
 }
 
 func (b *Batchqlite) ExecNow(ctx context.Context, query string, args ...any) error {
-	if !b.open {
+	if !b.open.Load() {
 		return ErrNotOpen
 	}
 	if err := validateQuery(query); err != nil {
@@ -407,7 +407,7 @@ func (b *Batchqlite) ExecNow(ctx context.Context, query string, args ...any) err
 
 // read
 func (b *Batchqlite) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	if !b.open {
+	if !b.open.Load() {
 		return nil, ErrNotOpen
 	}
 
@@ -417,7 +417,7 @@ func (b *Batchqlite) Query(ctx context.Context, query string, args ...any) (*sql
 }
 
 func (b *Batchqlite) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
-	if !b.open {
+	if !b.open.Load() {
 		// can't return err, let ctx fail
 	}
 
@@ -463,7 +463,7 @@ func (b *Batchqlite) Logger() *slog.Logger {
 
 // internal: close connections
 func (b *Batchqlite) closeConns() error {
-	b.open = false
+	b.open.Store(false)
 	werr := b.writeConn.Close()
 	rerr := b.readPool.Close()
 	if werr != nil {
