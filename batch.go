@@ -224,6 +224,8 @@ func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error 
 		select {
 		case b.queue <- req:
 			return nil
+		case <-b.stopCh:
+			return ErrClosing
 		default:
 			return ErrQueueFull
 		}
@@ -268,6 +270,8 @@ func (b *Batchqlite) ExecAndWait(ctx context.Context, query string, args ...any)
 		select {
 		case b.queue <- req:
 			return p, nil
+		case <-b.stopCh:
+			return nil, ErrClosing
 		default:
 			return nil, ErrQueueFull
 		}
@@ -307,6 +311,8 @@ func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) e
 		select {
 		case b.queue <- req:
 			return nil
+		case <-b.stopCh:
+			return ErrClosing
 		default:
 			return ErrQueueFull
 		}
@@ -784,12 +790,3 @@ func validateQuery(query string) error {
 
 	return nil
 }
-
-/*
-func main() {
-  batch := NewBatchqlite()
-  batch.WithMaxWait(10000)
-  batch.WithDb(db)
-  batch.Open()
-}
-*/
