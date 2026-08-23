@@ -22,6 +22,11 @@ const (
 	releaseStmt   = "RELEASE __batchqlite_sp"
 )
 
+type savepointResult struct {
+	result sql.Result
+	err    error
+}
+
 type writeRequestType int
 
 const (
@@ -546,24 +551,36 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 
 		saveTx, err := b.writeConn.BeginTx(context.Background(), nil)
 		if err != nil {
-			// begin transaction failed so report back
-			for _, req := range batch {
-				if req.typeOf == respondRequest {
-					req.pending.complete(nil, ErrStructuralFailure)
-				}
-				if req.typeOf == loggedRequest {
-					b.Logger().Error("batchqlite: query not attempted due to structural failure", "query", req.query)
-				}
-			}
+			b.resolveAllAsStructuralFailure(batch)
 			return fmt.Errorf("batchqlite: could not begin savepoint transaction: %w", err)
 		}
 
-		err = b.execWithSavepoints(saveTx, batch)
-		if err != nil {
-			return err
+		results, saveErr := b.execWithSavepoints(saveTx, batch)
+		if saveErr != nil {
+			b.resolveAllAsStructuralFailure(batch)
+			return saveErr
 		}
-		if err = saveTx.Commit(); err != nil {
-			return fmt.Errorf("batchqlite: could not commit savepoint transaction: %w", err)
+		if commitErr := saveTx.Commit(); commitErr != nil {
+			b.resolveAllAsStructuralFailure(batch)
+			return commitErr
+		}
+
+		for i, res := range results {
+			if res.err != nil {
+				if batch[i].typeOf == respondRequest {
+					batch[i].pending.complete(nil, res.err)
+				}
+				if batch[i].typeOf == loggedRequest {
+					b.Logger().Error("batchqlite: query error", "query", batch[i].query, "err", res.err)
+				}
+			} else {
+				if batch[i].typeOf == respondRequest {
+					batch[i].pending.complete(res.result, nil)
+				}
+				if batch[i].typeOf == loggedRequest {
+					// no logging on successs
+				}
+			}
 		}
 
 		return nil
@@ -585,6 +602,19 @@ func (b *Batchqlite) flushBatch(batch []writeRequest) error {
 	}
 
 	return nil
+}
+
+func (b *Batchqlite) resolveAllAsStructuralFailure(batch []writeRequest) {
+	for _, req := range batch {
+		if req.typeOf == respondRequest {
+			if dup := req.pending.complete(nil, ErrStructuralFailure); dup {
+				b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
+			}
+		}
+		if req.typeOf == loggedRequest {
+			b.Logger().Error("batchqlite: query not attempted due to structural failure", "query", req.query)
+		}
+	}
 }
 
 // internal: exec
@@ -614,88 +644,45 @@ func (b *Batchqlite) execFastPath(tx *sql.Tx, batch []writeRequest) ([]sql.Resul
 	return results, nil
 }
 
-func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) (err error) {
+func (b *Batchqlite) execWithSavepoints(tx *sql.Tx, batch []writeRequest) ([]savepointResult, error) {
 	if len(batch) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	resolved := make([]bool, len(batch))
-
-	// fallback for any unexpected sqlite errors
-	defer func() {
-		if err == nil {
-			return
-		}
-
-		for i, req := range batch {
-			if resolved[i] {
-				continue
-			}
-
-			if req.typeOf == respondRequest {
-				req.pending.complete(nil, ErrStructuralFailure)
-			}
-
-			if req.typeOf == loggedRequest {
-				b.Logger().Error("batchqlite: query not attempted due to structural failure", "query", req.query)
-			}
-
-		}
-	}()
+	results := make([]savepointResult, len(batch))
 
 	for i, req := range batch {
 		ctxErr := req.ctx.Err()
 		if ctxErr != nil {
-			if req.typeOf == respondRequest {
-				if dup := req.pending.complete(nil, ctxErr); dup {
-					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
-				}
-			}
-			if req.typeOf == loggedRequest {
-				b.Logger().Error("batchqlite: query error", "query", req.query, "err", ctxErr)
-			}
-			resolved[i] = true
+			results[i].err = ctxErr
+			results[i].result = nil
 			continue
 		}
 
-		_, err = tx.Exec(savepointStmt)
-		if err != nil {
-			return err
+		_, txErr := tx.Exec(savepointStmt)
+		if txErr != nil {
+			return nil, txErr
 		}
 
 		r, execErr := tx.Exec(req.query, req.args...)
 		if execErr != nil {
 			_, rollbackErr := tx.Exec(rollbackStmt)
 			if rollbackErr != nil {
-				return rollbackErr
+				return nil, rollbackErr
 			}
-			if req.typeOf == respondRequest {
-				if dup := req.pending.complete(nil, execErr); dup {
-					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
-				}
-			}
-			if req.typeOf == loggedRequest {
-				b.Logger().Error("batchqlite: query error", "query", req.query, "err", execErr)
-			}
-			resolved[i] = true
+			results[i].err = execErr
+			results[i].result = nil
 		} else {
 			_, releaseErr := tx.Exec(releaseStmt)
 			if releaseErr != nil {
-				return releaseErr
+				return nil, releaseErr
 			}
-			if req.typeOf == respondRequest {
-				if dup := req.pending.complete(r, nil); dup {
-					b.Logger().Error("batchqlite: duplicate complete (should not happen)", "query", req.query)
-				}
-			}
-			if req.typeOf == loggedRequest {
-				// no log required on success
-			}
-			resolved[i] = true
+			results[i].err = nil
+			results[i].result = r
 		}
 	}
 
-	return nil
+	return results, nil
 }
 
 // internal: checkpoint
