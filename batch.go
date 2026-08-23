@@ -27,6 +27,7 @@ type batchqliteState uint32
 
 const (
 	stateClosed batchqliteState = iota
+	stateOpening
 	stateOpen
 	stateClosing
 )
@@ -212,7 +213,7 @@ func NewBatchqlite() *Batchqlite {
 
 // init
 func (b *Batchqlite) Open(driverName, dataSourceName string) error {
-	if !b.state.CompareAndSwap(uint32(stateClosed), uint32(stateOpen)) {
+	if !b.state.CompareAndSwap(uint32(stateClosed), uint32(stateOpening)) {
 		return ErrAlreadyOpen
 	}
 
@@ -255,6 +256,8 @@ func (b *Batchqlite) Open(driverName, dataSourceName string) error {
 
 	go b.flushLoop()
 	go b.checkpointLoop()
+
+	b.state.Store(uint32(stateOpen))
 
 	return nil
 }
