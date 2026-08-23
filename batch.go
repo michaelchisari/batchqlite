@@ -322,6 +322,8 @@ func (b *Batchqlite) Exec(ctx context.Context, query string, args ...any) error 
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-b.stopCh:
+			return ErrClosing
 		}
 	}
 
@@ -364,6 +366,8 @@ func (b *Batchqlite) ExecAndWait(ctx context.Context, query string, args ...any)
 			return p, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-b.stopCh:
+			return nil, ErrClosing
 		}
 	}
 
@@ -401,6 +405,8 @@ func (b *Batchqlite) ExecQuiet(ctx context.Context, query string, args ...any) e
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-b.stopCh:
+			return ErrClosing
 		}
 	}
 

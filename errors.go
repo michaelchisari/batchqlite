@@ -22,5 +22,6 @@ var (
 	ErrMultipleStatementsInQuery = errors.New("batchqlite: query cannot contain multiple statements")
 	ErrStructuralFailure         = errors.New("batchqlite: structural failure, query not attempted")
 	ErrAbandoned                 = errors.New("batchqlite: request abandoned, batch closed with AbandonQueueOnClose")
+	ErrClosing                   = errors.New("batchqlite: batch is closing, no longer accepting writes")
 	ErrCloseForceFailed          = errors.New("batchqlite: flush goroutine did not stop even after force-closing connections")
 )
