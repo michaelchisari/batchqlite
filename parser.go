@@ -91,7 +91,7 @@ func lexicalParser(q string) (map[string]struct{}, bool) {
 				}
 			}
 
-			words[w] = struct{}{}
+			words[string(n)] = struct{}{}
 			continue
 		}
 		i++
