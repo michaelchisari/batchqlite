@@ -43,7 +43,7 @@ And then:
 
 ```
     b := batchqlite.NewBatchqlite()
-    b.Open("sqlite3", "/tmp/data.db");
+    b.Open("sqlite3", "/tmp/data.db")
 ```
 
 Having trouble with `cgo`? Try this:
@@ -57,7 +57,7 @@ And then:
 
 ```
     b := batchqlite.NewBatchqlite()
-    b.Open("sqlite", "/tmp/data.db");
+    b.Open("sqlite", "/tmp/data.db")
 ```
 
 
